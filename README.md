@@ -1,4 +1,3 @@
-````md
 # 🕯️ Coding Candle  
 **Code Until the Candle Melts**
 
@@ -131,5 +130,3 @@ Feel free to fork, modify, and build upon it.
 🕯️
 **If the candle melts before the code is done —
 it’s time for a break.**
-
-```
