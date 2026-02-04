@@ -1,0 +1,169 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Candle</title>
+  <style>
+    html, body { margin:0; height:100%; background:transparent; overflow:hidden; }
+    canvas { position:fixed; right:16px; bottom:16px; width:180px; height:220px; }
+  </style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+const canvas = document.getElementById("c");
+const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+
+function resize() {
+  const cssW = 180, cssH = 220;
+  canvas.style.width = cssW + "px";
+  canvas.style.height = cssH + "px";
+  canvas.width = Math.floor(cssW * dpr);
+  canvas.height = Math.floor(cssH * dpr);
+}
+resize();
+
+const ctx = canvas.getContext("2d");
+ctx.scale(dpr, dpr);
+
+const drops = [];
+let t0 = performance.now();
+let melt = 0; // 0..1
+
+function rand(a,b){ return a + Math.random()*(b-a); }
+
+// rounded rect helper
+function rrect(x,y,w,h,r){
+  ctx.beginPath();
+  ctx.moveTo(x+r, y);
+  ctx.arcTo(x+w, y, x+w, y+h, r);
+  ctx.arcTo(x+w, y+h, x, y+h, r);
+  ctx.arcTo(x, y+h, x, y, r);
+  ctx.arcTo(x, y, x+w, y, r);
+  ctx.closePath();
+}
+
+function drawFlame(x,y,phase){
+  // simple flicker flame (two layers)
+  const flick = Math.sin(phase*6) * 2 + Math.sin(phase*13)*1.2;
+  // outer
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(Math.sin(phase*2)*0.06);
+  ctx.globalAlpha = 0.9;
+  ctx.fillStyle = "rgba(255,170,50,0.9)";
+  ctx.beginPath();
+  ctx.ellipse(0+flick*0.2, -16, 10+flick*0.1, 18+flick*0.3, 0, 0, Math.PI*2);
+  ctx.fill();
+  // inner
+  ctx.globalAlpha = 0.9;
+  ctx.fillStyle = "rgba(255,240,200,0.9)";
+  ctx.beginPath();
+  ctx.ellipse(0, -14, 5, 10, 0, 0, Math.PI*2);
+  ctx.fill();
+  ctx.restore();
+}
+
+function frame(now){
+  const dt = (now - t0) / 1000;
+  t0 = now;
+
+  // melt speed: ~2.5 dakika tam erime (istersen değiştir)
+  melt = Math.min(1, melt + dt / 150);
+
+  ctx.clearRect(0,0,180,220);
+
+  // anchor bottom
+  const baseX = 90;
+  const baseBottom = 200;
+
+  const baseH = 140;
+  const h = baseH * (1 - 0.55*melt);
+  const w = 70;
+  const x = baseX - w/2;
+  const y = baseBottom - h;
+
+  // top "melt" surface as wavy line
+  const waveAmp = 3 + 4*melt;
+  const waveFreq = 0.9 + 1.2*melt;
+  const phase = now/1000;
+
+  // candle body
+  ctx.save();
+  // subtle shadow
+  ctx.fillStyle = "rgba(0,0,0,0.12)";
+  ctx.beginPath();
+  ctx.ellipse(baseX, baseBottom+8, 36, 10, 0, 0, Math.PI*2);
+  ctx.fill();
+
+  // body gradient-ish via two fills (simple)
+  rrect(x, y, w, h, 14);
+  ctx.fillStyle = "rgba(245,235,210,0.95)";
+  ctx.fill();
+
+
+  // top surface (cut-in) to look melted
+  ctx.globalCompositeOperation = "source-atop";
+  ctx.fillStyle = "rgba(210,200,180,0.35)";
+  ctx.beginPath();
+  ctx.moveTo(x, y+18);
+  for(let i=0;i<=20;i++){
+    const px = x + (w*i/20);
+    const py = y + 12 + Math.sin(phase*waveFreq + i*0.6)*waveAmp;
+    ctx.lineTo(px, py);
+  }
+  ctx.lineTo(x+w, y+30);
+  ctx.lineTo(x, y+30);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.globalCompositeOperation = "source-over";
+  
+  // wick
+  const wickX = baseX;
+  const wickTop = y + 8;
+  ctx.strokeStyle = "rgba(60,40,30,0.9)";
+  ctx.lineWidth = 3;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(wickX, wickTop + 14);
+  ctx.lineTo(wickX, wickTop);
+  ctx.stroke();
+
+  // flame
+  drawFlame(wickX, wickTop, phase);
+
+  ctx.restore();
+
+  // wax drops spawn
+  if (Math.random() < (0.03 + 0.05*melt)) {
+    drops.push({
+      x: baseX + rand(-w*0.35, w*0.35),
+      y: y + rand(18, 28),
+      vy: rand(20, 45),
+      r: rand(2, 4),
+      life: 0
+    });
+  }
+
+  // update/draw drops
+  for (let i = drops.length-1; i>=0; i--) {
+    const d = drops[i];
+    d.life += dt;
+    d.y += d.vy * dt;
+    d.vy += 40 * dt; // gravity-ish
+    ctx.fillStyle = "rgba(240,230,205,0.9)";
+    ctx.beginPath();
+    ctx.ellipse(d.x, d.y, d.r, d.r*1.4, 0, 0, Math.PI*2);
+    ctx.fill();
+
+    // remove when below
+    if (d.y > 215 || d.life > 6) drops.splice(i,1);
+  }
+
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

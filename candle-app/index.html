@@ -1,0 +1,378 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<style>
+  :root {
+    --px-bg: rgba(20, 24, 30, 0.55);
+    --px-panel: rgba(12, 14, 18, 0.75);
+    --px-border: rgba(255, 255, 255, 0.22);
+    --px-border2: rgba(0, 0, 0, 0.35);
+    --px-text: rgba(255,255,255,0.92);
+    --px-muted: rgba(255,255,255,0.7);
+    --px-accent: rgba(255, 200, 60, 0.95);
+  }
+
+  html, body {
+    margin: 0;
+    background: transparent;
+    overflow: hidden;
+  }
+  canvas {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    image-rendering: pixelated;
+    display: block;
+  }
+  .hud {
+    position: fixed;
+    left: 6px;
+    top: 6px;
+    width: 180px;
+    padding: 8px;
+    background: var(--px-panel);
+    color: var(--px-text);
+    font: 20px/1.2 ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    border-radius: 0; /* pixel look */
+    box-shadow: 0 0 0 2px var(--px-border2), 0 0 0 3px var(--px-border);
+  }
+
+  .title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 6px;
+    letter-spacing: 0.2px;
+  }
+  .title .dot {
+    width: 6px;
+    height: 6px;
+    background: var(--px-accent);
+    box-shadow: 0 0 0 2px rgba(0,0,0,0.35);
+  }
+  .sub {
+    color: var(--px-muted);
+    margin-bottom: 8px;
+  }
+
+  .row {
+    display: grid;
+    grid-template-columns: 1fr 58px;
+    gap: 6px;
+    align-items: center;
+    margin-bottom: 6px;
+  }
+  label { color: var(--px-muted); }
+
+  input {
+    width: 100%;
+    background: rgba(255,255,255,0.08);
+    color: var(--px-text);
+    border: 0;
+    outline: none;
+    padding: 5px 6px;
+    box-shadow: inset 0 0 0 2px rgba(0,0,0,0.35), inset 0 0 0 3px rgba(255,255,255,0.12);
+    font: inherit;
+  }
+  input::placeholder { color: rgba(255,255,255,0.45); }
+
+  .btn {
+    width: 100%;
+    margin-top: 6px;
+    padding: 6px 8px;
+    background: rgba(255, 200, 60, 0.22);
+    color: var(--px-text);
+    border: 0;
+    cursor: pointer;
+    box-shadow: 0 0 0 2px rgba(0,0,0,0.35), 0 0 0 3px rgba(255, 200, 60, 0.55);
+    font: inherit;
+  }
+  .btn:hover { background: rgba(255, 200, 60, 0.30); }
+
+  .mini {
+    margin-top: 6px;
+    color: rgba(255,255,255,0.7);
+    font-size: 9px;
+  }
+
+  .error {
+    margin-top: 6px;
+    color: rgba(255, 120, 120, 0.95);
+    font-size: 9px;
+    min-height: 10px;
+  }
+
+  .status {
+    position: fixed;
+    left: 6px;
+    bottom: 6px;
+    padding: 6px 8px;
+    background: var(--px-bg);
+    color: var(--px-text);
+    font: 9px/1.2 ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    box-shadow: 0 0 0 2px rgba(0,0,0,0.35), 0 0 0 3px rgba(255,255,255,0.10);
+    pointer-events: none;
+    opacity: 0.9;
+  }
+
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+
+<canvas id="c"></canvas>
+
+<!-- Kaç dakika aralığında olacağı soruluyor, sonra rastgele bir sayı seçerek o kadar dakikada mum eriyorr -->
+<div id="hud" class="hud">
+  <div class="title">
+    <div class="dot"></div>
+    <div><b>ERİME SÜRESİ</b></div>
+  </div>
+  <div class="sub">Dakika aralığı gir (ondalıklı).</div>
+
+  <div class="row">
+    <label for="minM">Min</label>
+    <input id="minM" type="number" step="0.1" min="0.1" value="2.5" placeholder="2.5" />
+  </div>
+
+  <div class="row">
+    <label for="maxM">Max</label>
+    <input id="maxM" type="number" step="0.1" min="0.1" value="6.0" placeholder="6.0" />
+  </div>
+
+  <button id="start" class="btn">START</button>
+  <div class="mini">İpucu: <b>I</b> ile formu aç/kapat</div>
+  <div id="err" class="error"></div>
+</div>
+
+<div id="status" class="status hidden"></div>
+
+<script>
+// ------------------------
+// Canvas setup (pixel art resolution)
+// ------------------------
+const W = 32;
+const H = 45;
+
+const canvas = document.getElementById("c");
+canvas.width = W;
+canvas.height = H;
+
+const ctx = canvas.getContext("2d");
+ctx.imageSmoothingEnabled = false;
+
+function px(x, y, color) {
+  ctx.fillStyle = color;
+  ctx.fillRect(x, y, 1, 1);
+}
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+
+// ------------------------
+// UI elements
+// ------------------------
+const hud = document.getElementById("hud");
+const status = document.getElementById("status");
+const err = document.getElementById("err");
+const minInp = document.getElementById("minM");
+const maxInp = document.getElementById("maxM");
+const startBtn = document.getElementById("start");
+
+// ------------------------
+// Time-based melt (decimal minutes)
+// ------------------------
+let durationMs = 3 * 60_000;
+let startTs = 0;
+let melt = 0;
+let running = false;
+let pickedMinutes = 0;
+
+function pickDurationMinutesDecimal(minM, maxM) {
+  let a = Number(minM);
+  let b = Number(maxM);
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return null;
+  if (a <= 0 || b <= 0) return null;
+
+  const lo = Math.min(a, b);
+  const hi = Math.max(a, b);
+
+  // random decimal, 2 decimals
+  const r = lo + Math.random() * (hi - lo);
+  return Math.round(r * 100) / 100; // 2 decimal minutes
+}
+
+function startMeltFromForm() {
+  err.textContent = "";
+
+  const picked = pickDurationMinutesDecimal(minInp.value, maxInp.value);
+  if (picked === null) {
+    err.textContent = "Min/Max geçerli sayı olmalı (0'dan büyük).";
+    return;
+  }
+  if (picked < 0.1) {
+    err.textContent = "Süre çok küçük. En az 0.1 dk.";
+    return;
+  }
+
+  pickedMinutes = picked;
+  durationMs = pickedMinutes * 60_000;
+  startTs = performance.now();
+  melt = 0;
+  running = true;
+
+  // Hide form, show status
+  hud.classList.add("hidden");
+  status.classList.remove("hidden");
+  status.textContent = `Süre: ${pickedMinutes} dk`;
+}
+
+// toggle hud with I
+window.addEventListener("keydown", (e) => {
+  if (e.key.toLowerCase() === "i") {
+    const isHidden = hud.classList.contains("hidden");
+    hud.classList.toggle("hidden");
+    // status only visible while running & hud hidden
+    if (running) status.classList.toggle("hidden", !hud.classList.contains("hidden"));
+  }
+});
+
+startBtn.addEventListener("click", startMeltFromForm);
+
+// ------------------------
+// Candle drawing (pixel art) + melt
+// ------------------------
+function drawCandle(melt01) {
+  ctx.clearRect(0, 0, W, H);
+
+  // base stand
+  for (let y = 40; y < 42; y++) {
+    for (let x = 8; x < 24; x++) px(x, y, "#8b5a2b");
+  }
+
+  // body shrinks from top with melt
+  const bodyTopBase = 18;
+  const bodyBottom = 39;
+  const maxCut = 20; // pixels
+  const cut = Math.floor(maxCut * melt01);
+  const bodyTop = bodyTopBase + cut;
+  const topEdgeY = bodyTop - 1;
+
+  // body fill
+  for (let y = bodyTop; y <= bodyBottom; y++) {
+    for (let x = 11; x < 21; x++) px(x, y, "#d6c3a5");
+  }
+  // darker edges
+  for (let y = bodyTop; y <= bodyBottom; y++) {
+    px(11, y, "#b8a48a");
+    px(20, y, "#b8a48a");
+  }
+
+  // top wax edge
+  if (topEdgeY >= 12) {
+    px(12, topEdgeY, "#b8a48a");
+    px(13, topEdgeY, "#d6c3a5");
+    px(14, topEdgeY, "#d6c3a5");
+    px(15, topEdgeY, "#d6c3a5");
+    px(16, topEdgeY, "#d6c3a5");
+    px(17, topEdgeY, "#d6c3a5");
+    px(18, topEdgeY, "#b8a48a");
+  }
+
+  // wick follows the top
+  const wickY = clamp(bodyTop - 3, 9, 40);
+  px(15, wickY, "#2b1a0f");
+  px(15, wickY + 1, "#2b1a0f");
+  px(15, wickY + 2, "#2b1a0f");
+
+  return { wickX: 15, wickY };
+}
+
+// ------------------------
+// Flame flicker: 6-frame + jitter + sparks
+// ------------------------
+const flameFrames = [
+  // bigger
+  [[15,11,"#ffcc33"], [14,12,"#ff9933"], [15,12,"#ffcc33"], [16,12,"#ff9933"], [14,13,"#ff9933"], [15,13,"#ffcc33"], [16,13,"#ff9933"], [15,14,"#ff6600"]],
+  // taller
+  [[15,10,"#ffcc33"], [14,11,"#ff9933"], [15,11,"#ffcc33"], [16,11,"#ff9933"], [14,12,"#ff9933"], [15,12,"#ffcc33"], [16,12,"#ff9933"], [15,13,"#ff6600"]],
+  // wider
+  [[15,11,"#ffcc33"], [13,12,"#ff9933"], [14,12,"#ffcc33"], [15,12,"#ffcc33"], [16,12,"#ffcc33"], [17,12,"#ff9933"], [14,13,"#ff9933"], [15,13,"#ffcc33"], [16,13,"#ff9933"], [15,14,"#ff6600"]],
+  // small
+  [[15,11,"#ffcc33"], [14,12,"#ff9933"], [15,12,"#ffcc33"], [16,12,"#ff9933"], [15,13,"#ff6600"]],
+  // left lean
+  [[14,10,"#ffcc33"], [13,11,"#ff9933"], [14,11,"#ffcc33"], [15,11,"#ff9933"], [13,12,"#ff9933"], [14,12,"#ffcc33"], [15,12,"#ff9933"], [14,13,"#ff6600"]],
+  // right lean
+  [[16,10,"#ffcc33"], [15,11,"#ff9933"], [16,11,"#ffcc33"], [17,11,"#ff9933"], [15,12,"#ff9933"], [16,12,"#ffcc33"], [17,12,"#ff9933"], [16,13,"#ff6600"]],
+];
+
+let flameTick = 0;
+
+function drawFlame(wickX, wickY, intensity01) {
+  // jitter adds life
+  const jx = (Math.random() < 0.28) ? (Math.random() < 0.5 ? -1 : 1) : 0;
+  const jy = (Math.random() < 0.18) ? (Math.random() < 0.5 ? -1 : 1) : 0;
+
+  // speed varies
+  flameTick += 1 + (Math.random() < 0.22 ? 1 : 0);
+  const f = flameTick % flameFrames.length;
+  const base = flameFrames[f];
+
+  // anchor transform
+  const dx = wickX - 15 + jx;
+  const dy = (wickY - 15) + jy;
+
+  // draw base flame
+  for (const [x,y,c] of base) px(x + dx, y + dy, c);
+
+  // sparks (more when intensity is high)
+  const sparkChance = 0.10 + 0.25 * intensity01;
+  if (Math.random() < sparkChance) px(wickX + (Math.random()<0.5?-1:1), wickY - 6, "#ffcc33");
+  if (Math.random() < sparkChance * 0.6) px(wickX, wickY - 7, "#ff9933");
+
+  // as it melts out, flame slightly weaker (a bit more red)
+  if (intensity01 < 0.25 && Math.random() < 0.6) {
+    px(wickX, wickY - 5, "#ff6600");
+  }
+}
+
+// ------------------------
+// Loop
+// ------------------------
+function loop(now) {
+  if (!running) {
+    // Show an idle tiny candle or just clear
+    ctx.clearRect(0, 0, W, H);
+    // Optional: draw a static mini candle preview behind the form
+    const { wickX, wickY } = drawCandle(0);
+    drawFlame(wickX, wickY, 1);
+    requestAnimationFrame(loop);
+    return;
+  }
+
+  const elapsed = now - startTs;
+  melt = clamp(elapsed / durationMs, 0, 1);
+
+  const intensity = 1 - melt;
+
+  const { wickX, wickY } = drawCandle(melt);
+  drawFlame(wickX, wickY, intensity);
+
+  // status updates
+  const leftMs = Math.max(0, durationMs - elapsed);
+  const leftMin = Math.round((leftMs / 60000) * 100) / 100;
+  status.textContent = `Süre: ${pickedMinutes} dk | Kalan: ${leftMin} dk`;
+
+  // when finished
+  if (melt >= 1) {
+    status.textContent = `Bitti! (Süre: ${pickedMinutes} dk)  |  I: tekrar ayarla`;
+    // stop flame gradually if you want: just keep running, but intensity ~0
+  }
+
+  requestAnimationFrame(loop);
+}
+
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
