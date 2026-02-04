@@ -17,12 +17,13 @@
         "url": "/",
         "width": 200,
         "height": 260,
-        "resizable": false,
+        "resizable": true,
+        "center": true,
         "decorations": false,
         "transparent": true,
         "alwaysOnTop": true,
         "skipTaskbar": true,
-        "shadow": true
+        "shadow": false
       }
     ],
     "security": {
